@@ -30,6 +30,7 @@ informative:
   I-D.hildebrand-spud-prototype:
   I-D.huitema-tls-dtls-as-subtransport:
   I-D.blanchet-iab-internetoverport443:
+  I-D.baker-6man-hbh-header-handling:
   Saltzer84:
     title: End-to-End Arguments in System Design (ACM Trans. Comp. Sys.)
     author:
@@ -52,52 +53,111 @@ informative:
 
 --- abstract
 
-The IAB Stack Evolution in a Middlebox Internet (SEMI) workshop in Zurich in January 2015 and the follow-up Substrate Protocol for User Datagrams (SPUD) BoF session at the IETF 92 meeting in Dallas in March 2015 identified the potential need for a UDP-based encapsulation to allow explicit cooperation with middleboxes while using new, encrypted transport protocols. This document proposes a set of architectural considerations for such approaches.
+The IAB Stack Evolution in a Middlebox Internet (SEMI) workshop in Zurich in
+January 2015 and the follow-up Substrate Protocol for User Datagrams (SPUD)
+BoF session at the IETF 92 meeting in Dallas in March 2015 identified the
+potential need for a UDP-based encapsulation to allow explicit cooperation
+with middleboxes while using encryption at the transport layer and above to
+protect user payload and metadata from inspection and interference. This
+document proposes a set of architectural considerations for such approaches.
 
 --- middle
 
 # Introduction and Motivation
 
-[EDITOR'S NOTE: this whole document is a horrendous mishmash of spudreq and newtea at the moment. needs edit badly.]
+The current work of the IAB IP Stack Evolution Program is to support the
+evolution of the Internet's transport layer and its interfaces to other layers
+in the Internet Protocol stack. The need for this work is driven by two
+trends. First is the development and increased deployment of cryptography in
+Internet protocols to protect against pervasive monitoring {{RFC7258}}, which
+will break many middleboxes used in the operation and management of
+Internet-connected networks and which assume access to plaintext content. An
+additional encapsulation layer to allow selective, explicit metadata exchange
+between the endpoints and devices on path to replace ad-hoc packet inspection
+is one approach to retain network manageability in an encrypted Internet.
+
+Second is the increased deployment of new applications (e.g. interactive media
+as in RTCWEB {{I-D.ietf-rtcweb-overview}}) for which the abstractions provided
+by today's transport APIs (i.e., either a single reliable stream as in
+SOCK_STREAM over TCP, or an unreliable, unordered packet sequence as in
+SOCK_DGRAM over UDP) are inadequate. This evolution is constrained by the
+presence of middleboxes which interfere with connectivity or packet
+invariability in the presence of new transport protocols or transport protocol
+extensions.
+
+The core issue is one of layer violation. The boundary between the network and
+transport layers was originally defined to be the boundary between information
+used (and potentially modified) hop-by-hop, and that only used end-to-end. The
+widespread deployment of network address and port translation (NAPT) in the
+Internet has eroded this boundary. The first four bytes after the IP header or
+header chain -- the source and destination ports -- are now the de facto
+boundary between the layers. This erosion has continued into the transport and
+application layer headers and down into content, as the capabilities of
+deployed middleboxes have increased over time. Evolution above the network
+layer is only possible if this layer boundary is reinforced. Asking on-path
+devices nicely not to muck about in the transport layer and below -- stating
+in an RFC that devices on path MUST NOT use or modify some header field -- has
+not proven to be of much use here, so we need a new approach.
+
+This boundary can be reinforced by encapsulating new transport protocols in
+UDP and encrypting everything above the UDP header. Indeed, this will be a
+side effect of the increased deployment of cryptography in Internet protocols
+to protect against pervasive monitoring in any event. However, this brings
+with it other problems. First, middleboxes which maintain state must use
+timers to expire that state for UDP flows, since there is no exposure of flow
+lifetime and bidirectional establishment as with TCP's SYN, ACK, FIN, and RST
+flags. These timers are often set fast enough to require a relatively high
+rate of heartbeat traffic to maintain this state. A limited facility to expose
+basic semantics of the underlying transport protocol would allow these devices
+to keep state as they do with TCP, with no worse characteristics with respect
+to state management than those of TCP.
+
+This is a specific case of a more general issue: some of the inspection of
+traffic done by middleboxes above the network-transport boundary is
+operationally useful. However, the use of transport layer and higher layer
+headers is an implicit feature of the architecture: middleboxes are exploiting
+the fact are transmitted in cleartext. There is no explicit cooperation here:
+the endpoints have no control over the information exposed to the path, and
+the middleboxes no information about the intentions of the endpoint
+application other than that inferred from the inspected traffic. We propose a
+change to the architecture to remedy this condition.
+
+# Explicit Cooperation as Architectural Principle
+
+The principle behind this change is one of explicit cooperation.
+
+The present Internet architecture is rife with implicit cooperation between
+endpoints and devices on the path between them. For example, network address
+translators (NATs) rewrite addresses and ports in order to increase the size
+of the Internet at the expense of universal reachability, but this translation
+is not explicitly invoked by either endpoint. As another example, traffic
+classification is often required for network management purposes, and often
+uses deep packet inspection to determine the traffic class of a particular
+packet or flow. This classification is done without endpoint consent or
+knowledge, and without any explicit cooperation of the designers and
+implementors of the protocols being inspected. Indeed, the entire knowledge
+available at the midpoint in this arrangement is based on assumptions about
+the protocol implementations in use at the endpoints.
+
+It is this implicit cooperation which has led to the ossification of the
+transport layer in the Internet. Implicit cooperation requires devices along
+the path to make assumptions about the format of the packets and the nature of
+the traffic they are forwarding, which in turn leads to problems using
+protocols which don't meet these assumptions. It also forces application and
+transport protocol developers to build protocols that operate in this
+presumed, least-common-denominator network environment.
+
+We take the position that this situation can be improved by replacing implicit
+cooperation with explicit cooperation. We first explore the properties of an
+ideal architecture for explicit cooperation, then consider the constraints
+imposed by the present configuration of the Internet which would make
+transition to this ideal architecture infeasible. From this we derive a set of
+architectural principles and protocol design requirements which will support
+an incrementally deployable approach to explicit cooperation between
+applications on endpoints and middleboxes in the Internet.
 
 
-The current work of the IAB IP Stack Evolution Program is to support the evolution of the Internet's transport layer and its interfaces to other layers in the Internet Protocol stack. The need for this work is driven by two trends. First is the development and increased deployment of cryptography in Internet protocols to protect against pervasive monitoring {{RFC7258}}, which will break many middleboxes used in the operation and management of Internet-connected networks and which assume access to plaintext content. An additional encapsulation layer to allow selective, explicit metadata exchange between the endpoints and devices on path to replace ad-hoc packet inspection is one approach to retain network manageability in an encrypted Internet.
-
-Second is the increased deployment of new applications (e.g. interactive media as in RTCWEB {{I-D.ietf-rtcweb-overview}}) for which the abstractions provided by today's transport APIs (i.e., either a single reliable stream as in SOCK_STREAM over TCP, or an unreliable, unordered packet sequence as in SOCK_DGRAM over UDP) are inadequate. This evolution is constrained by the presence of middleboxes which interfere with connectivity or packet invariability in the presence of new transport protocols or transport protocol extensions.
-
-Parts of this problem are presently being addressed in various ways by the IETF. The Transport Services (TAPS) Working Group is defining a new abstract interface for specifying transport requirements to the transport layer, with a vocabulary based upon existing transport protocol service features. This will allow future transport layers (implemented in userspace libraries, in operating system kernels, or some combination of the two) to select a wire protocol based upon these requirements and the properties of the path between the endpoints, including the impairments of middleboxes along that path.
-
-The Substrate Protocol for User Datagrams (SPUD) Birds of a Feather (BoF) session at IETF 92 in Dallas in March 2015 discussed use cases and a prototype protocol {{I-D.hildebrand-spud-prototype}} for encapsulating opaque content in UDP, with a facility for signaling limited transport semantics and binding metadata to packets and flows in a flexible way. This encapsulation is designed to provide explicit cooperation between endpoints and middleboxes where this makes sense, while allowing new transport protocol development to happen both in the kernel -- to which it has largely been restricted due to the history of the development of TCP/IP -- as well as in userspace. The outcome of the BoF session was to continue the discussion about the architecture, transport semantics and metadata vocabulary, and experimental implementation of this approach on the mailing list established for the BoF (spud@ietf.org)
-
-SPUD is not the only protocol-level work to address explicit communication between endpoints and devices along the path: work in the Transport Layer Security (TLS) working group {{I-D.huitema-tls-dtls-as-subtransport}} discusses the possibility and provides a gap analysis for running a "minimal common subtransport" exposing common transport semantics as in SPUD directly over the Datagram Transport Layer Security (DTLS) protocol {{RFC6347}}.
-
-These efforts aim at building flexible mechanisms to solve the problem of expanding the interface between the transport layer and the applications above it as well as the problem of making explicit the contract between the transport layer and devices on path which should, in an end-to-end Internet, limit themselves to lower-layer interactions, but practically speaking have not done so for the past two decades.
-
-This document aims to provide an architectural basis for these efforts, enumerating a set of architectural assumptions for transport evolution based upon new encapsulations, and discussing limitations on the vocabulary used in each of these new interfaces necessary to achieve deployment.
-
-The boundary between the network and transport layers was originally defined to be the boundary between information used (and potentially modified) hop-by-hop, and that only used end-to-end. The widespread deployment of network address and port translation (NAPT) in the Internet has eroded this boundary. The first four bytes after the IP header or header chain -- the source and destination ports -- are now the de facto boundary between the layers. This erosion has continued into the transport and application layer headers and down into content, as the capabilities of deployed middleboxes have increased over time. Evolution above the network layer is only possible if this layer boundary is reinforced. Asking on-path devices nicely not to muck about in the transport layer and below -- stating in an RFC that devices on path MUST NOT use or modify some header field -- has not proven to be of much use here, so we need a new approach.
-
-This boundary can be reinforced by encapsulating new transport protocols in UDP and encrypting everything above the port numbers. Indeed, this will be a side effect of the increased deployment of cryptography in Internet protocols to protect against pervasive monitoring {{RFC7258}} in any event. However, this brings with it other problems. First, middleboxes which maintain state must use timers to expire that state for UDP flows, since there is no exposure of flow lifetime and bidirectional establishment as with TCP's SYN, ACK, FIN, and RST flags. These timers are often set fast enough to require a relatively high rate of heartbeat traffic to maintain this state. A limited facility to expose basic semantics of the underlying transport protocol would allow these devices to keep state as they do with TCP, with no worse characteristics with respect to state management than those of TCP.
-
-This is a specific case of a more general issue: some of the inspection of traffic done by middleboxes above the network-transport boundary is operationally useful. However, the use of transport layer and higher layer headers is an implicit feature of the architecture: middleboxes are exploiting the fact are transmitted in cleartext. There is no explicit cooperation here: the endpoints have no control over the information exposed to the path, and the middleboxes no information about the intentions of the endpoint application other than that inferred from the inspected traffic. We propose a change to the architecture to remedy this condition.
-
-
-
-# Terminology
-
-This document borrows terminology from {{I-D.ietf-taps-transports}}, specifically Transport Service, Transport Service Feature, Transport Protocol, and Transport Protocol Component, for discussing the composition of transport services.
-
-[EDITOR'S NOTE: define Application Endpoint, Endhost, and Routable Endpoint, as well as Midpoint, Middlebox, etc., using existing terminology where applicable. A defined terminology here will help avoid imprecision in this conversation.]
-
-# An Architecture for Explicit Path-Endpoint Cooperation
-
-The present Internet architecture is rife with implicit cooperation between endpoints and devices on the path between them. For example, network address translators (NATs) rewrite addresses and ports in order to increase the size of the Internet at the expense of universal reachability, but this translation is not explicitly invoked by either endpoint. Traffic classification is often required for network management purposes, and often uses deep packet inspection to determine the traffic class of a particular packet or flow.
-
-It is this implicit cooperation which has led to the ossification of the transport layer in the Internet. Implicit cooperation requires devices along the path to make assumptions about the format of the packets and the nature of the traffic they are forwarding, which in turn leads to problems using protocols which don't meet these assumptions. It also forces application and transport protocol developers to build protocols that operate in this presumed, least-common-denominator network environment.
-
-We take the position that this situation can be improved by replacing implicit cooperation with explicit cooperation. We first explore the properties of an ideal architecture for explicit cooperation, then consider the constraints imposed by the present configuration of the Internet which would make transition to this ideal architecture infeasible. From this we derive a set of architectural principles and protocol design requirements which will support an incrementally deployable approach to explicit cooperation between applications on endpoints and middleboxes in the Internet.
-
-## Principles: What does good look like?
+## What does good look like?
 
 We can take some guidance for the future from the original Internet architecture.
 
@@ -124,7 +184,8 @@ indicates that a packet should be sent to a given address. The contract for
 fragmentation was implicit in IPv4, but in-network fragmentation was removed
 in IPv6 {{RFC2460}}.
 
-We note that layer boundaries can be enforced using sufficiently strong cryptography.
+We note that layer boundaries can be enforced using sufficiently strong
+cryptography.
 
 As a second principle, the presence of in-network functionality along a path
 which results in the modification of packet streams received at the other end
@@ -144,13 +205,26 @@ lensing them through known implementations of each socket type, these
 transport requirements can be exposed to and/or matched with properties of
 devices along the path, where that is useful.
 
-[EDITOR'S NOTE: this is perhaps a bit further than we want to actually go, but this would seem to be the logical conclusion of "make path interaction explicit"]
+## What keeps us from getting there?
 
-## Impairments: What keeps us from getting there?
+The clear separation of network and transport layer has been steadily eroded
+over the past twenty years or so. Network address and port translation (NAPT)
+have effectively made the first four bytes of the transport header a de-facto
+part of the network layer, and have made it difficult to deploy protocols
+where NAPT devices don't know that the ports are safe to touch: anything other
+than UDP and TCP. Protocols to support with NAT traversal (e.g. Interactive
+Connectivity Establishment {{RFC5245}}) do not address this fundamental
+problem.
 
-The clear separation of network and transport layer has been steadily eroded over the past twenty years or so. Network address and port translation (NAPT) have effectively made the first four bytes of the transport header a de-facto part of the network layer, and have made it difficult to deploy protocols where NAPT devices don't know that the ports are safe to touch: anything other than UDP and TCP. Protocols to support with NAT traversal (e.g. Interactive Connectivity Establishment {{RFC5245}}) do not address this fundamental problem.
-
-Mechanisms that could be used to support explicit cooperation between applications and middleboxes could be supported within the network layer. The IPv6 Hop-by-Hop Options Header is explicitly intended for this purpose, and a new hop-by-hop option could be defined. However, there are some limitations to using this header: it is only supported by IPv6, it may itself cause packets to be dropped, it may not be handled efficiently (or indeed at all) by currently deployed routers and middleboxes, and it requires changes to operating system stacks at the endpoints to allow applications to access these headers.
+Mechanisms that could be used to support explicit cooperation between
+applications and middleboxes could be supported within the network layer. The
+IPv6 Hop-by-Hop Options Header is intended for this purpose, and a new
+hop-by-hop option could be defined. However, there are some limitations to
+using this header: it is only supported by IPv6, it may itself cause packets
+to be dropped, it may not be handled efficiently (or indeed at all) by
+currently deployed routers and middleboxes
+{{I-D.baker-6man-hbh-header-handling}}, and it requires changes to operating
+system stacks at the endpoints to allow applications to access these headers.
 
 One of the effects of the fact that cryptography enforces layer boundaries is
 that applications and transports run over HTTPS de facto
@@ -158,13 +232,48 @@ that applications and transports run over HTTPS de facto
 implemented, accessible, and deployable way for application developers to get
 this enforcement.
 
-However, the greatest barriers to explicit cooperation between applications and devices along the path is the lack of explicit trust among them. While it is possible to assign trust within the "first hop" administrative domains,  especially when the endpoint and network operator are the same entity, building and operating an infrastructure for assigning and maintaining these trust relationships within an Internet context is currently impractical.
+However, the greatest barriers to explicit cooperation between applications
+and devices along the path is the lack of explicit trust among them. While it
+is possible to assign trust within the "first hop" administrative domains,
+especially when the endpoint and network operator are the same entity,
+building and operating an infrastructure for assigning and maintaining these
+trust relationships within an Internet context is currently impractical.
 
-Finally, the erosion of the end-to-end principle has not occurred in a vacuum.  There are incentives to deploy in-network functions, and services that are impaired by them have already worked around these impairments. For example, the present trend toward service recentralization ("cloud computing") can be seen in part as the market's response to the end of end-to-end. Tf every application-layer transaction is mediated by services owned by the application's operator, two-end NAT traversal is no longer important. This new architecture for services has additional implications for the types of interactions supported, and for the types of business models encouraged, which may in turn make some of the concerns about limited deployability of new transport protocols moot.
+Finally, the erosion of the end-to-end principle has not occurred in a vacuum.
+There are incentives to deploy in-network functions, and services that are
+impaired by them have already worked around these impairments. For example,
+the present trend toward service recentralization ("cloud computing") can be
+seen in part as the market's response to the end of end-to-end. If every
+application-layer transaction is mediated by services owned by the
+application's operator, two-end NAT traversal is no longer important. This new
+architecture for services has additional implications for the types of
+interactions supported, and for the types of business models encouraged, which
+may in turn make some of the concerns about limited deployability of new
+transport protocols moot.
 
 ## What can we do?
 
-First we turn to the problem of re-separation of the network layer from the transport layer. NAPT, as noted, has effectively made the ports part of the network layer, and this change is not easy to undo, so we can make this explicit. In many NAPT environments only UDP and TCP traffic will be forewarded, and a packet with a TCP header may be assumed by middleboxes to have TCP semantics; therefore, the solution space is constrained to putting the "new" separation between the network and transport layers within a UDP encapsulation. This has a further positive implication for incremental deployability: it is possible to implement UDP-based encapsulations in userspace
+First we turn to the problem of re-separation of the network layer from the
+transport layer. NAPT, as noted, has effectively made the ports part of the
+network layer, and this change is not easy to undo, so we can make this
+explicit. In many NAPT environments only UDP and TCP traffic will be
+forwarded, and a packet with a TCP header may be assumed by middleboxes to
+have TCP semantics; therefore, the solution space is most probably constrained
+to putting the "new" separation between the network and transport layers
+within a UDP encapsulation.
+
+Since the relative delay in getting new transport protocols into widely
+deployed kernel implementations has historically been another impediment to
+deploying these new protocols in the Internet, a UDP encapsulation based
+approach has a further implication for incremental deployability: it is
+possible to implement UDP-based encapsulations in userspace. While userspace
+implementations may lack some of the interfaces to lower layers available to
+kernelspace implementations necessary to build high-performance transport
+implementations, the ability to deploy widely and quickly may help break the
+chicken-and-egg problem of getting a transport protocol adopted into
+kernelspace.
+
+[EDITOR'S NOTE: work continues from here]
 
 # Encapsulation and signaling mechanisms
 
@@ -587,3 +696,22 @@ This document has no actions for IANA.
 In addition to the editors, this document is the work of David Black, Ken Calvert, Ted Hardie, Joe Hildebrand, Jana Iyengar, and Eric Rescorla.
 
 [EDITOR'S NOTE: make this a real contributor's section once we figure out how to make kramdown do that...]
+
+# Additional Stuff
+
+[EDITOR'S NOTE: stuff pushed to the end of the doc to delete when we're done]
+
+This document aims to provide an architectural basis for these efforts, enumerating a set of architectural assumptions for transport evolution based upon new encapsulations, and discussing limitations on the vocabulary used in each of these new interfaces necessary to achieve deployment.
+
+Parts of this problem are presently being addressed in various ways by the IETF. The Transport Services (TAPS) Working Group is defining a new abstract interface for specifying transport requirements to the transport layer, with a vocabulary based upon existing transport protocol service features. This will allow future transport layers (implemented in userspace libraries, in operating system kernels, or some combination of the two) to select a wire protocol based upon these requirements and the properties of the path between the endpoints, including the impairments of middleboxes along that path.
+
+The Substrate Protocol for User Datagrams (SPUD) Birds of a Feather (BoF) session at IETF 92 in Dallas in March 2015 discussed use cases and a prototype protocol {{I-D.hildebrand-spud-prototype}} for encapsulating opaque content in UDP, with a facility for signaling limited transport semantics and binding metadata to packets and flows in a flexible way. This encapsulation is designed to provide explicit cooperation between endpoints and middleboxes where this makes sense, while allowing new transport protocol development to happen both in the kernel -- to which it has largely been restricted due to the history of the development of TCP/IP -- as well as in userspace. The outcome of the BoF session was to continue the discussion about the architecture, transport semantics and metadata vocabulary, and experimental implementation of this approach on the mailing list established for the BoF (spud@ietf.org).
+
+SPUD is not the only protocol-level work to address explicit communication between endpoints and devices along the path: work in the Transport Layer Security (TLS) working group {{I-D.huitema-tls-dtls-as-subtransport}} discusses the possibility and provides a gap analysis for running a "minimal common subtransport" exposing common transport semantics as in SPUD directly over the Datagram Transport Layer Security (DTLS) protocol {{RFC6347}}. Generic UDP encapsulation {{I-D.ietf-nvo3-gue}} could also be used as a basis for such an approach.
+
+
+# Terminology
+
+This document borrows terminology from {{I-D.ietf-taps-transports}}, specifically Transport Service, Transport Service Feature, Transport Protocol, and Transport Protocol Component, for discussing the composition of transport services.
+
+[EDITOR'S NOTE: define Application Endpoint, Endhost, and Routable Endpoint, as well as Midpoint, Middlebox, etc., using existing terminology where applicable. A defined terminology here will help avoid imprecision in this conversation.]
