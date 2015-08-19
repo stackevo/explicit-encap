@@ -18,17 +18,13 @@ author:
     city: 8092 Zurich
     country: Switzerland
 informative:
-informative:
   RFC0791:
   RFC2460:
   RFC5245:
-  RFC6347:
   RFC7258:
   RFC7435:
   I-D.ietf-rtcweb-overview:
-  I-D.ietf-taps-transports:
   I-D.hildebrand-spud-prototype:
-  I-D.huitema-tls-dtls-as-subtransport:
   I-D.blanchet-iab-internetoverport443:
   I-D.baker-6man-hbh-header-handling:
   Saltzer84:
@@ -41,16 +37,9 @@ informative:
       -
         ins: D. D. Clark
     date: 1984  
-  RFC0792:
   RFC2827:
-  RFC4821:
-  RFC6347:
-  RFC7510:
   I-D.hildebrand-spud-prototype:
-  I-D.huitema-tls-dtls-as-subtransport:
-  I-D.trammell-stackevo-newtea:
   I-D.iab-semi-report:
-  I-D.ietf-dart-dscp-rtp:
 
 --- abstract
 
@@ -466,4 +455,4 @@ This revision of this document presents no security considerations. A more rigor
 
 # Acknowledgments
 
-Many thanks to the attendees of the IAB Workshop on Stack Evolution in a Middlebox Internet (SEMI) in Zurich, 26-27 January 2015; most of the thoughts in this document follow directly from discussions at SEMI. This work is partially supported by the European Commission under Grant Agrement FP7-318627 mPlane; support does not imply endorsement by the Commission of the content of this work.
+Many thanks to the attendees of the IAB Workshop on Stack Evolution in a Middlebox Internet (SEMI) in Zurich, 26-27 January 2015 {{I-D.iab-semi-report}}; most of the thoughts in this document follow directly from discussions at SEMI. This work is partially supported by the European Commission under Grant Agrement FP7-318627 mPlane; support does not imply endorsement by the Commission of the content of this work.
