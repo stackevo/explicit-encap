@@ -40,7 +40,8 @@ informative:
         ins: D. P. Reed
       -
         ins: D. D. Clark
-    date: 1984  RFC0792:
+    date: 1984  
+  RFC0792:
   RFC2827:
   RFC4821:
   RFC6347:
@@ -272,7 +273,7 @@ implementations, the ability to deploy widely and quickly may help break the
 chicken-and-egg problem of getting a transport protocol adopted into
 kernelspace.
 
-Some issues inherent in this approach are addressed in {{encapsulations-are-narrow}}.
+Some issues inherent in this approach are addressed in {{encapsulation-considerations}}.
 
 Next, we turn to the problem of explicit cooperation. Here we presume that the
 encapsulation we use to reinforce the boundary can be extended to do
@@ -294,59 +295,106 @@ This fact has two implications for encapsulation design: First, maximum payload 
 
 ## Return routability and feedback
 
-[EDITOR'S NOTE: fix and generalize]
-
-We have identified a requirement to support as wide a range of overlying
-transports as possible and feasible, in order to maximize SPUD's potential for
-improving the evolvability of the transport stack.
-
 The ease of forging source addresses in UDP together with the only limited
 deployment of network egress filtering {{RFC2827}} means that UDP traffic
 presently lacks a return routability guarantee. This has led in part to the
 present situation wherein UDP traffic may be blocked by firewalls when not
-explicitly needed by an organization as part of its Internet connectivity. In
-addition, to defend against state exhaustion attacks on middleboxes, SPUD may
-need to see a first packet in a reverse direction on a tube to consider that
-tube acknowledged and valid.
+explicitly needed by an organization as part of its Internet connectivity.
 
 Return routability is therefore a minimal property of any transport that can
-be responsibly deployed at scale in the Internet. Therefore SPUD should
-enforce bidirectional communication at start-up, whether the overlying
-transport is bidirectional or not.  This excludes use of the UDP source
-port as an entropy input that does not accept traffic (i.e., for one-way
-communication, as is commonly done for unidirectional UDP tunnels, e.g.,
-MPLS in UDP {{RFC7510}}).
-
+be responsibly deployed at scale in the Internet. Encapsulation approaches
+must provide a return routability guarantee and defense against state
+exhaustion attacks.
 
 # Trust in endpoint-path signaling
 
-In a perfect world, the trust relationships among endpoints and elements on path would be precisely and explicitly defined: an endpoint would explicitly delegate some processing to a network element on its behalf, network elements would be able to trust any command from any endpoint, and the integrity and authenticity of signaling in both directions would be cryptographically protected.
+In a perfect world, the trust relationships among endpoints and elements on
+path would be precisely and explicitly defined: an endpoint would explicitly
+delegate some processing to a network element on its behalf, network elements
+would be able to trust any command from any endpoint, and the integrity and
+authenticity of signaling in both directions would be cryptographically
+protected.
 
-However, both the economic reality that the users at the endpoints and the operators of the network may not always have aligned interests, as well as the difficulty of universal key exchange and trust distribution among widely heterogeneous devices across administrative domain boundaries, require us to take a different approach toward building deployable, useful metadata signaling.
+However, both the economic reality that the users at the endpoints and the
+operators of the network may not always have aligned interests, as well as the
+difficulty of universal key exchange and trust distribution among widely
+heterogeneous devices across administrative domain boundaries, require us to
+take a different approach toward building deployable, useful metadata
+signaling.
 
-We observe that imperative signaling approaches in the past have often failed in that they give each actor incentives to lie. Markings to ask the network to explicitly treat some packets as more important than others will see their value inflate away -- i.e., most packets from most sources will be so marked -- unless some mechanism is built to police those markings. Reservation protocols suffer from the same problem: for example, if an endpoint really needs 1Mbps, but there is no penalty for reserving 1.5Mbps "just in case", a conservative strategy on the part of the endpoint leads to over-reservation.
+We observe that imperative signaling approaches in the past have often failed
+in that they give each actor incentives to lie. Markings to ask the network to
+explicitly treat some packets as more important than others will see their
+value inflate away -- i.e., most packets from most sources will be so marked --
+unless some mechanism is built to police those markings. Reservation protocols
+suffer from the same problem: for example, if an endpoint really needs 1Mbps,
+but there is no penalty for reserving 1.5Mbps "just in case", a conservative
+strategy on the part of the endpoint leads to over-reservation.
 
 ## Declarative marking
 
-An alternate approach is to treat these markings as declarative and advisory, and to treat all markings on packets and flows as relative to other markings on packets and flows from the same sender. In this case, where neither endpoints nor path elements can reliably predict the actions other elements in the network will take with respect to the marking, and where no endpoint can ask for special treatment at the expense of other endpoints, the incentives to marking inflation are greatly diminished.
+An alternate approach is to treat these markings as declarative and advisory,
+and to treat all markings on packets and flows as relative to other markings
+on packets and flows from the same sender. In this case, where neither
+endpoints nor path elements can reliably predict the actions other elements in
+the network will take with respect to the marking, and where no endpoint can
+ask for special treatment at the expense of other endpoints, the incentives to
+marking inflation are greatly diminished.
 
-For example, consider the case of an endpoint declaring that a particular traffic flow is latency- rather than loss- sensitive. In other words, it is more willing to accept higher packet loss rates than longer delay. These tolerances may be expressed either with a single boolean signal ("latency-sensitive" as opposed to the default loss-sensitive assumption implicitly made in the current Internet) or with some richer vocabulary (i.e. "if this packet doesn't make it in 200ms it's useless"). First, note that in any case, the preference the endpoint is declaring is a tradeoff, as opposed to "better" service at the expense of some other traffic. This reduces the incentive to "mark inflation".
+For example, consider the case of an endpoint declaring that a particular
+traffic flow is latency- rather than loss- sensitive. In other words, it is
+more willing to accept higher packet loss rates than longer delay. These
+tolerances may be expressed either with a single boolean signal
+("latency-sensitive" as opposed to the default loss-sensitive assumption
+implicitly made in the current Internet) or with some richer vocabulary (i.e.
+"if this packet doesn't make it in 200ms it's useless"). First, note that in
+any case, the preference the endpoint is declaring is a tradeoff, as opposed
+to "better" service at the expense of some other traffic. This reduces the
+incentive to "mark inflation".
 
-As a second example, consider a sender that knows it has a 200kbps audio stream, and that it has two minutes of audio to send. It can declare its intention to send at the known rate and duration, which the path can use for traffic engineering purposes. However, there in a declarative environment, there is no expectation on the part of the endpoint that this bandwidth will be reserved, so there is no incentive to ask for more bandwidth for longer.
+As a second example, consider a sender that knows it has a 200kbps audio
+stream, and that it has two minutes of audio to send. It can declare its
+intention to send at the known rate and duration, which the path can use for
+traffic engineering purposes. However, there in a declarative environment,
+there is no expectation on the part of the endpoint that this bandwidth will
+be reserved, so there is no incentive to ask for more bandwidth for longer.
 
 ## Verifiable marking
 
-In addition, markings and declarations should be defined in such a way that they are verifiable, and verification built end to endpoints and middleboxes wherever practical. Going back to the previous example, the average data rate for the given flow is trivially verifiable at any endpoint. A firewall which uses this data for traffic classification and differential quality of service may spot-check the data rate for such flows, and penalize those flows and sources which are clearly mismarking their traffic.
+In addition, markings and declarations should be defined in such a way that
+they are verifiable, and verification built end to endpoints and middleboxes
+wherever practical. Going back to the previous example, the average data rate
+for the given flow is trivially verifiable at any endpoint. A firewall which
+uses this data for traffic classification and differential quality of service
+may spot-check the data rate for such flows, and penalize those flows and
+sources which are clearly mismarking their traffic.
 
-It is probably not possible, especially in an environment with ubiquitous opportunistic encryption {{RFC7435}}, to define a useful marking vocabulary such that every marking will be so easily verifiable. But we note that the more verifiable a marking is, the more likely it will be useful in a variably-trusted environment.
+It is probably not possible, especially in an environment with ubiquitous
+opportunistic encryption {{RFC7435}}, to define a useful marking vocabulary
+such that every marking will be so easily verifiable. But we note that the
+more verifiable a marking is, the more likely it will be useful in a
+variably-trusted environment.
 
 # Privacy considerations in endpoint-path signaling
 
 Attaching new information to flows or subflows will require a new identifier
 to associate sets of packets with each other. Here there is a tradeoff between
-flexibility and privacy preservation. A large identifier space with globally unique identifiers for packet groups would support multicast, multipath, and mobility applications, but would also build a new tracking identifier into the encapsulation, nullifying one of the advantages of encrypting everything above the networking layer. Recognizing that much of the network recognizes a five-tuple (source and destination address and port along with protocol identifier) as a flow ID, scoping the packet group ID to the five-tuple will reduce or eliminate its additional usefuless for tracking, as well as fixing problems with ID collision in NAT environments.
+flexibility and privacy preservation. A large identifier space with globally
+unique identifiers for packet groups would support multicast, multipath, and
+mobility applications, but would also build a new tracking identifier into the
+encapsulation, nullifying one of the advantages of encrypting everything above
+the networking layer. Recognizing that much of the network recognizes a
+five-tuple (source and destination address and port along with protocol
+identifier) as a flow ID, scoping the packet group ID to the five-tuple will
+reduce or eliminate its additional usefuless for tracking, as well as fixing
+problems with ID collision in NAT environments.
 
-Declarations must be designed according to the principle of least access:  information exposed by the signaling mechanism must only expose that information actually needed to implement a certain service in the network, and no more. For the example above, the traffic bit rate and duration are signaled, but there is no explicit declaration of the content type, encoding, or identity.
+Declarations must be designed according to the principle of least access:
+information exposed by the signaling mechanism must only expose that
+information actually needed to implement a certain service in the network, and
+no more. For the example above, the traffic bit rate and duration are
+signaled, but there is no explicit declaration of the content type, encoding,
+or identity.
 
 # Engineering tradeoffs
 
@@ -368,7 +416,9 @@ In the simplest case of information exposed by endpoints, in-band signaling is
 possible. Here, the signaling channel happens on the same 5-tuple as the data
 carried by the transport layer. This arrangement does not require
 foreknowledge of the identity and addresses of devices along the path by
-endpoints and vice versa -- endpoint declarations are seen by each device along the path as a side effect of packet forwarding -- but is harder to realize for path-to-endpoint signaling.
+endpoints and vice versa -- endpoint declarations are seen by each device
+along the path as a side effect of packet forwarding -- but is harder to
+realize for path-to-endpoint signaling.
 
 In-band signaling can be either piggybacked or interleaved. Piggybacked
 signaling uses some number of bits in each packet generated by the overlying
@@ -386,13 +436,15 @@ sidesteps MTU problems, but is only applicable to signaling that can be done
 per packet group as opposed to per packet.
 
 Out-of-band signaling uses direct connections between endpoints and
-middleboxes, separate from the transport. These connections could be set up using in-band signaling. A key disadvantage here is that
-out-of-band signaling packets may not take the same path as packets with content. Signaling of path-to-endpoint information, in the case that a middlebox wants
-to signal something to the sender of the packet, raises the added problem of
-either (1) requiring the middlebox to send the information to the receiver for
-later reflection back to the sender, which has the disadvantage of complexity,
-or (2) requiring out-of-band direct signaling back to the sender, which in
-turn either requires the middlebox to spoof the source address and port of the
+middleboxes, separate from the transport. These connections could be set up
+using in-band signaling. A key disadvantage here is that out-of-band signaling
+packets may not take the same path as packets with content. Signaling of
+path-to-endpoint information, in the case that a middlebox wants to signal
+something to the sender of the packet, raises the added problem of either (1)
+requiring the middlebox to send the information to the receiver for later
+reflection back to the sender, which has the disadvantage of complexity, or
+(2) requiring out-of-band direct signaling back to the sender, which in turn
+either requires the middlebox to spoof the source address and port of the
 receiver to ensure equivalent NAT treatment, or some other NAT-traversal
 approach.
 
